@@ -11,13 +11,26 @@ IF(NOT CMAKE_BUILD_TYPE)
 ENDIF(NOT CMAKE_BUILD_TYPE)
 
 ## Find catkin and any catkin packages
-find_package(catkin REQUIRED COMPONENTS roscpp sensor_msgs)
+find_package(catkin REQUIRED COMPONENTS 
+    roscpp 
+    rospy
+    sensor_msgs
+)
 
 ## Declare a catkin package
 catkin_package()
 
 include_directories(include ${catkin_INCLUDE_DIRS})
 
+## Script
+install(PROGRAMS
+  scripts/zed2i_sub.py  # Path to your Python file
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
 ## Build 
 add_executable(zed_video_sub src/zed_video_sub_tutorial.cpp)
+add_executable(zed2i_video_sub src/zed2i_video_sub_tutorial.cpp)
+
 target_link_libraries(zed_video_sub ${catkin_LIBRARIES})
+target_link_libraries(zed2i_video_sub ${catkin_LIBRARIES})

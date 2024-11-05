@@ -19,31 +19,25 @@
 ///////////////////////////////////////////////////////////////////////////
 
 /**
- * This tutorial demonstrates simple receipt of ZED depth messages over the ROS system.
+ * This tutorial demonstrates how to receive the Left and Right rectified images
+ * from the ZED node
  */
 
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
 
 /**
- * Subscriber callback
+ * Subscriber callbacks. The argument of the callback is a constant pointer to the received message
  */
 
-void depthCallback(const sensor_msgs::Image::ConstPtr& msg)
+void imageRightRectifiedCallback(const sensor_msgs::Image::ConstPtr& msg)
 {
-  // Get a pointer to the depth values casting the data
-  // pointer to floating point
-  float* depths = (float*)(&msg->data[0]);
+  ROS_INFO("Right Rectified image received from ZED - Size: %dx%d", msg->width, msg->height);
+}
 
-  // Image coordinates of the center pixel
-  int u = msg->width / 2;
-  int v = msg->height / 2;
-
-  // Linear index of the center pixel
-  int centerIdx = u + msg->width * v;
-
-  // Output the measure
-  ROS_INFO("Center distance : %g m", depths[centerIdx]);
+void imageLeftRectifiedCallback(const sensor_msgs::Image::ConstPtr& msg)
+{
+  ROS_INFO("Left Rectified image received from ZED - Size: %dx%d", msg->width, msg->height);
 }
 
 /**
@@ -85,7 +79,9 @@ int main(int argc, char** argv)
    * is the number of messages that will be buffered up before beginning to throw
    * away the oldest ones.
    */
-  ros::Subscriber subDepth = n.subscribe("/zed2i/zed_node/depth/depth_registered", 10, depthCallback);
+  ros::Subscriber subRightRectified =
+      n.subscribe("/zed2i/zed_node/right/image_rect_color", 10, imageRightRectifiedCallback);
+  ros::Subscriber subLeftRectified = n.subscribe("image", 10, imageLeftRectifiedCallback);
 
   /**
    * ros::spin() will enter a loop, pumping callbacks.  With this version, all
