@@ -15,7 +15,6 @@ find_package(catkin REQUIRED COMPONENTS
     roscpp
     rospy 
     sensor_msgs
-    numpy
 )
 
 ## Declare a catkin package

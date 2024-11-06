@@ -15,16 +15,22 @@ find_package(catkin REQUIRED COMPONENTS
     roscpp 
     rospy
     sensor_msgs
+    cv_bridge  # Required for converting ROS images to OpenCV
 )
 
 ## Declare a catkin package
 catkin_package()
 
-include_directories(include ${catkin_INCLUDE_DIRS})
+include_directories(
+  include
+  ${OpenCV_INCLUDE_DIRS} 
+  ${catkin_INCLUDE_DIRS}
+)
 
 ## Script
 install(PROGRAMS
-  scripts/zed2i_sub.py  # Path to your Python file
+  scripts/zed2i_sub.py
+  scripts/zed2i_sub_tensorRT.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
