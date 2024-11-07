@@ -5,6 +5,7 @@ import cv2
 import mmcv
 import torch
 from sensor_msgs.msg import Image
+from std_msgs.msg import Float32MultiArray, Int32MultiArray
 from cv_bridge import CvBridge
 import time
 from mmdeploy.apis.utils import build_task_processor
@@ -17,11 +18,15 @@ bridge = CvBridge()
 
 # Load your model and configuration once
 deploy_cfg = '/home/kevin/mmdeploy/configs/mmdet/instance-seg/instance-seg_rtmdet-ins_tensorrt_static-640x640.py'
-model_cfg = '/home/kevin/mmdetection/configs/rtmdet/rtmdet-ins_s_8xb32-300e_coco.py'
+model_cfg = '/home/kevin/mmdetection/configs/cow/rtmdet-ins_tiny_1xb4-500e_cow_update_20241017.py'
 device = 'cuda'
-backend_model = ['/home/kevin/mmdeploy_model/rtmdet-ins/end2end.engine']
+backend_model = ['/home/kevin/mmdeploy/mmdeploy_models/cow/rtmdet-ins_tiny/end2end.engine']
 
-output_image_pub = rospy.Publisher('/segmentation_result', Image, queue_size=60)
+output_image_pub = rospy.Publisher('/segmentation_result/image', Image, queue_size=60)
+output_bboxes_pub = rospy.Publisher('/segmentation_result/bboxes', Float32MultiArray, queue_size=60)
+output_labels_pub = rospy.Publisher('/segmentation_result/labels', Int32MultiArray, queue_size=60)
+output_scores_pub = rospy.Publisher('/segmentation_result/scores', Float32MultiArray, queue_size=60)
+output_masks_pub = rospy.Publisher('/segmentation_result/masks', Image, queue_size=60)  # Publish masks as images
 
 def init_model():
     global task_processor, model, input_shape
@@ -67,11 +72,33 @@ def publish_result(image_np, result):
         show=False)
     img = visualizer.get_image()
     img = mmcv.imconvert(img, 'bgr', 'rgb')
+
+    # Convert image and publish
     segment_result = bridge.cv2_to_imgmsg(img, "rgb8")
     output_image_pub.publish(segment_result)
+    # Publish bounding boxes
+    bboxes_msg = Float32MultiArray(data=result.pred_instances.bboxes.cpu().numpy().flatten())
+    output_bboxes_pub.publish(bboxes_msg)
+    # Publish labels
+    labels_msg = Int32MultiArray(data=result.pred_instances.labels.cpu().numpy())
+    output_labels_pub.publish(labels_msg)
+    # Publish scores
+    scores_msg = Float32MultiArray(data=result.pred_instances.scores.cpu().numpy())
+    output_scores_pub.publish(scores_msg)
 
 def publish_mask(result):
-    print(result)
+    pred_instances = result.pred_instances
+    masks = pred_instances.masks.cpu().numpy().astype('uint8')  # Convert boolean masks to uint8
+
+    # Combine masks by summing them along the instance axis
+    combined_mask = np.sum(masks, axis=0) * 255  # Scale to 0-255
+
+    # Ensure values do not exceed 255 in case of overlapping masks
+    combined_mask = np.clip(combined_mask, 0, 255).astype('uint8')
+
+    # Convert the combined mask to a ROS message and publish
+    mask_msg = bridge.cv2_to_imgmsg(combined_mask, "mono8")
+    output_masks_pub.publish(mask_msg)
 
 # Callback function to process each received image
 def image_callback(ros_image):
@@ -91,8 +118,8 @@ def image_callback(ros_image):
     # print(result)  # Placeholder for your actual result processing
 
     # publish result in ros topic
-    publish_result(image_np, result)
-    publish_mask(result)
+    # publish_result(image_np, result)
+    # publish_mask(result)
 
     # Display result in real time
     # display_result(image_np, result)

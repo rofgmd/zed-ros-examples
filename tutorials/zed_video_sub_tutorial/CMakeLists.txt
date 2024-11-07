@@ -14,6 +14,7 @@ ENDIF(NOT CMAKE_BUILD_TYPE)
 find_package(catkin REQUIRED COMPONENTS 
     roscpp 
     rospy
+    std_msgs
     sensor_msgs
     cv_bridge  # Required for converting ROS images to OpenCV
 )
@@ -31,6 +32,7 @@ include_directories(
 install(PROGRAMS
   scripts/zed2i_sub.py
   scripts/zed2i_sub_tensorRT.py
+  scripts/publish_svo.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
