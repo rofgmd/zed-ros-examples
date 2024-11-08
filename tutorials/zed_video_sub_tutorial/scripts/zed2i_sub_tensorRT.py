@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import mmcv
 import torch
+import heapq
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray, Int32MultiArray
 from cv_bridge import CvBridge
@@ -27,6 +28,17 @@ output_bboxes_pub = rospy.Publisher('/segmentation_result/bboxes', Float32MultiA
 output_labels_pub = rospy.Publisher('/segmentation_result/labels', Int32MultiArray, queue_size=60)
 output_scores_pub = rospy.Publisher('/segmentation_result/scores', Float32MultiArray, queue_size=60)
 output_masks_pub = rospy.Publisher('/segmentation_result/masks', Image, queue_size=60)  # Publish masks as images
+
+# Store centroids and depth image globally for use across callbacks
+centroids = []
+# Initialize the min-heap to store depths
+depth_heap = []
+# Initialize necessary variables
+depths = None
+combined_fodder_mask = None
+combined_bunk_mask = None
+smallest_depth = None
+fodder_bunk_ratio = None
 
 def init_model():
     global task_processor, model, input_shape
@@ -100,6 +112,172 @@ def publish_mask(result):
     mask_msg = bridge.cv2_to_imgmsg(combined_mask, "mono8")
     output_masks_pub.publish(mask_msg)
 
+def extract_mask(result):
+    # Extract cow information
+    # Assuming your instance segmentation results are stored as follows:
+    pred_instances = result.pred_instances
+    masks = pred_instances.masks  # Tensor of shape (N, H, W) where N is the number of instances
+    labels = pred_instances.labels  # Tensor of shape (N,)
+    bboxes = pred_instances.bboxes  # Tensor of shape (N, 4)
+    scores = pred_instances.scores  # Tensor of shape (N,)
+    return masks, labels ,bboxes, scores
+
+def extract_special_mask(image_np, result, is_visualize = False, cls_label = 2, score_threshold = 0.5):# default extract cow mask (cls_label == 2) and not visialuze
+    masks, labels ,bboxes, scores = extract_mask(result)
+    # Get the mask indices where label == 2 (i.e., cow instances)
+    indices = ((labels == cls_label) & (scores >= score_threshold)).nonzero(as_tuple=True)[0]  # This gives you the indices of "cow" instances
+    # Filter the masks for cows
+    indices_masks = masks[indices]
+
+    # Optionally, filter other attributes as well if needed
+    indices_bboxes = bboxes[indices]
+    indices_scores = scores[indices]
+    # Visualize the masks and bounding boxes if is_visualize is set to True
+    if is_visualize:
+        # Clone the original image to avoid modifying it directly
+        visual_image = image_np.copy()
+        
+        for i, mask in enumerate(indices_masks):
+            # Convert the mask tensor to a binary mask for OpenCV
+            mask_np = mask.cpu().numpy().astype(np.uint8) * 255
+
+            # Apply a random color for each mask
+            color = tuple(np.random.randint(0, 255, size=3).tolist())
+            
+            # Overlay the mask on the original image
+            visual_image[mask_np > 0] = 0.5 * visual_image[mask_np > 0] + 0.5 * np.array(color)
+
+            # Draw bounding box for each detected cow
+            bbox = indices_bboxes[i].cpu().numpy().astype(int)
+            cv2.rectangle(visual_image, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
+
+            # Optionally, add score text near the bounding box
+            score_text = f"{indices_scores[i].item():.2f}"
+            cv2.putText(visual_image, score_text, (bbox[0], bbox[1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+        # Show the image
+        cv2.imshow("Cow Masks and Bounding Boxes", visual_image)
+        cv2.waitKey(0)
+    
+    return indices_masks, indices_bboxes, indices_scores
+
+def calculate_cow_centroids(image_np, result, is_visualize = False):
+    # Extract cow information
+    cow_masks, _, _ = extract_special_mask(image_np, result)
+ 
+    # Assuming cow_masks is a tensor of shape (N, H, W), where N is the number of cow instances
+    global centroids
+    centroids.clear()  # Clear previous centroids
+
+    for mask in cow_masks:
+        # Get the non-zero indices (y, x coordinates) of the mask
+        y_indices, x_indices = torch.nonzero(mask, as_tuple=True)
+        
+        # Calculate the mean of x and y indices to find the centroid
+        if y_indices.numel() > 0 and x_indices.numel() > 0:  # Ensure there are non-zero values
+            centroid_x = x_indices.float().mean().item()
+            centroid_y = y_indices.float().mean().item()
+            centroids.append((centroid_x, centroid_y))
+    # Visualize the centroids if is_visualize is set to True
+    if is_visualize:
+        # Clone the original image for visualization
+        visual_image = image_np.copy()
+
+        # Draw each centroid as a small circle on the visual image
+        for centroid_x, centroid_y in centroids:
+            # Convert centroid coordinates to integer for OpenCV
+            center = (int(centroid_x), int(centroid_y))
+            color = (0, 255, 0)  # Green color for the centroids
+            cv2.circle(visual_image, center, radius=5, color=color, thickness=-1)  # Filled circle
+
+        # Display the image with centroids
+        cv2.imshow("Centroids on Masks", visual_image)
+        cv2.waitKey(0)
+
+    return centroids
+
+def extract_fodder_bunk_mask(image_np, result):
+    global combined_fodder_mask, combined_bunk_mask
+    bunk_mask, _, _, = extract_special_mask(image_np, result, False, 1, 0.5)
+    fodder_mask, _, _ = extract_special_mask(image_np, result, False, 3, 0.3)
+
+    fodder_mask = fodder_mask.cpu().numpy()
+    bunk_mask = bunk_mask.cpu().numpy()
+
+    combined_fodder_mask = np.zeros_like(fodder_mask[0], dtype=np.uint8)
+    combined_bunk_mask = np.zeros_like(bunk_mask[0], dtype=np.uint8)
+
+    for mask in fodder_mask:
+        combined_fodder_mask = np.logical_or(combined_fodder_mask, mask).astype(np.uint8)
+
+    for mask in bunk_mask:
+        combined_bunk_mask = np.logical_or(combined_bunk_mask, mask).astype(np.uint8)
+
+    return combined_fodder_mask, combined_bunk_mask
+
+# def extract_fodder_bunk_mask_tensor(image_np, result):
+#     global fodder_mask, bunk_mask
+#     bunk_mask, _, _, = extract_special_mask(image_np, result, False, 1, 0.5)
+#     fodder_mask, _, _ = extract_special_mask(image_np, result, False, 3, 0.3)
+#     return fodder_mask, bunk_mask
+
+def get_depth_weight_tensor(depth_value):
+    # 根据深度值的范围，设置权重
+    return torch.where(depth_value < 4, torch.tensor(1.0), torch.where(depth_value < 6, torch.tensor(0.8), torch.tensor(0.0)))
+
+def get_depth_weight(depth_value):
+    # 根据深度值的范围，设置权重
+    return np.where(depth_value < 4000, 1.0, np.where(depth_value < 6000, 0.8, 0))
+
+def calculate_fodder_bunk_ratio(fodder_mask, bunk_mask, depth_image):
+    # ensure bool
+    fodder_mask_bool = fodder_mask.astype(bool)
+    bunk_mask_bool = bunk_mask.astype(bool)
+
+    # extract depth value
+    fodder_depth = depth_image[fodder_mask_bool]
+    bunk_depth = depth_image[bunk_mask_bool]
+    # 累加深度值
+    fodder_depth_sum = np.sum(fodder_depth * fodder_depth * get_depth_weight(fodder_depth))
+    bunk_depth_sum = np.sum(bunk_depth * bunk_depth * get_depth_weight(bunk_depth))
+
+    # Calculate the ratio
+    fodder_bunk_ratio = fodder_depth_sum / bunk_depth_sum
+
+    # Print or return the ratio
+    return fodder_bunk_ratio
+
+def depthCallback(depth_msg):
+    global depths, smallest_depth, fodder_bunk_ratio, combined_fodder_mask, combined_bunk_mask
+    # Convert the raw data to a NumPy array of floats
+    depths = np.frombuffer(depth_msg.data, dtype=np.float32)
+    depth_image = depths.reshape(depth_msg.height, depth_msg.width)
+
+    # Make a writable copy of depth_image for tensor conversion
+    # depth_tensor = torch.from_numpy(depth_image.copy()).float()
+    # depth_tensor = depth_tensor.to('cuda')   
+
+    if centroids:
+        depth_heap.clear()
+        for u, v in centroids:
+            # Convert centroid coordinates to integers for indexing
+            u = int(u)
+            v = int(v)
+            Idx = u + depth_msg.width * v
+            depth = depths[Idx]
+            # Push the depth into the min-heap
+            heapq.heappush(depth_heap, depth)
+    
+    # Extract the smallest depth from the min-heap if it's not empty
+    if depth_heap:
+        smallest_depth = heapq.heappop(depth_heap)
+        rospy.loginfo(f"The Clostest depth of the cow: {smallest_depth/1000} m")
+
+    if combined_fodder_mask is not None and combined_bunk_mask is not None:
+        fodder_bunk_ratio = calculate_fodder_bunk_ratio(combined_fodder_mask, combined_bunk_mask, depth_image)
+        rospy.loginfo(f"Fodder to Bunk Ratio {fodder_bunk_ratio}")
+
 # Callback function to process each received image
 def image_callback(ros_image):
     # Convert ROS image to OpenCV format (BGR)
@@ -111,18 +289,9 @@ def image_callback(ros_image):
     process_time = time.time() - start_time
     rospy.loginfo(f"Inference time: {process_time:.4f}s")
 
-    # Process result (display, save, or further processing)
-    # Here, you could convert the segmentation masks to an output format of your choice
-    
-    # Example: print segmentation result
-    # print(result)  # Placeholder for your actual result processing
-
-    # publish result in ros topic
-    # publish_result(image_np, result)
-    # publish_mask(result)
-
-    # Display result in real time
-    # display_result(image_np, result)
+    # Calculate Cow
+    fodder_mask, bunk_mask = extract_fodder_bunk_mask(image_np, result)
+    calculate_cow_centroids(image_np, result)
 
 def main():
     # Initialize ROS node
@@ -131,9 +300,9 @@ def main():
     # Load the TensorRT model
     init_model()
 
-    # Subscribe to the ZED camera image topic
+    # Subscribe to the ZED camera image and depth topic
     rospy.Subscriber("/zed2i/zed_node/rgb_raw/image_raw_color", Image, image_callback)
-
+    rospy.Subscriber("/zed2i/zed_node/depth/depth_registered", Image, depthCallback)
     # Keep the node running
     rospy.spin()
 
