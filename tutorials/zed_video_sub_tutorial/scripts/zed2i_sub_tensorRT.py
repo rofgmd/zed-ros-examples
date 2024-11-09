@@ -5,8 +5,11 @@ import cv2
 import mmcv
 import torch
 import heapq
+import logging
+from logging.handlers import TimedRotatingFileHandler
+from datetime import datetime
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray, Int32MultiArray
+from std_msgs.msg import Float32MultiArray, Int32MultiArray, Float32
 from cv_bridge import CvBridge
 import time
 from mmdeploy.apis.utils import build_task_processor
@@ -16,6 +19,19 @@ from mmdet.registry import VISUALIZERS
 
 # Initialize CvBridge for converting ROS images to OpenCV format
 bridge = CvBridge()
+
+# Configure the log file path with datetime suffix
+log_file = f"/home/kevin/Documents/test_ros/log/instance_segment_log/seg_cow_fodder_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.log"
+handler = TimedRotatingFileHandler(
+    log_file, when="D", interval=1, backupCount=30
+)
+handler.setLevel(logging.INFO)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Set up the logger
+logger = logging.getLogger('rospy_logger')
+logger.setLevel(logging.INFO)
+logger.addHandler(handler)
 
 # Load your model and configuration once
 deploy_cfg = '/home/kevin/mmdeploy/configs/mmdet/instance-seg/instance-seg_rtmdet-ins_tensorrt_static-640x640.py'
@@ -28,6 +44,8 @@ output_bboxes_pub = rospy.Publisher('/segmentation_result/bboxes', Float32MultiA
 output_labels_pub = rospy.Publisher('/segmentation_result/labels', Int32MultiArray, queue_size=60)
 output_scores_pub = rospy.Publisher('/segmentation_result/scores', Float32MultiArray, queue_size=60)
 output_masks_pub = rospy.Publisher('/segmentation_result/masks', Image, queue_size=60)  # Publish masks as images
+fodder_bunk_ratio_pub = rospy.Publisher('fodder_bunk_ratio', Float32, queue_size=10)
+clostest_depth_cow_pub = rospy.Publisher('clostest_depth_cow', Float32, queue_size=10)
 
 # Store centroids and depth image globally for use across callbacks
 centroids = []
@@ -224,7 +242,7 @@ def extract_fodder_bunk_mask(image_np, result):
 
 def get_depth_weight_tensor(depth_value):
     # 根据深度值的范围，设置权重
-    return torch.where(depth_value < 4, torch.tensor(1.0), torch.where(depth_value < 6, torch.tensor(0.8), torch.tensor(0.0)))
+    return torch.where(depth_value < 4000, torch.tensor(1.0), torch.where(depth_value < 6000, torch.tensor(0.8), torch.tensor(0.0)))
 
 def get_depth_weight(depth_value):
     # 根据深度值的范围，设置权重
@@ -238,15 +256,41 @@ def calculate_fodder_bunk_ratio(fodder_mask, bunk_mask, depth_image):
     # extract depth value
     fodder_depth = depth_image[fodder_mask_bool]
     bunk_depth = depth_image[bunk_mask_bool]
+    # Remove nan or infinite values if they exist
+    fodder_depth = fodder_depth[np.isfinite(fodder_depth)]
+    bunk_depth = bunk_depth[np.isfinite(bunk_depth)]
+
     # 累加深度值
     fodder_depth_sum = np.sum(fodder_depth * fodder_depth * get_depth_weight(fodder_depth))
     bunk_depth_sum = np.sum(bunk_depth * bunk_depth * get_depth_weight(bunk_depth))
 
+    if fodder_depth is None or bunk_depth_sum is None or  bunk_depth_sum == 0:
+        return 0
+
     # Calculate the ratio
     fodder_bunk_ratio = fodder_depth_sum / bunk_depth_sum
-
+    fodder_bunk_ratio_pub.publish(fodder_bunk_ratio)
     # Print or return the ratio
     return fodder_bunk_ratio
+
+def calculate_clostest_depth_cow(depths, depth_msg):  
+    if centroids:
+        depth_heap.clear()
+        for u, v in centroids:
+            # Convert centroid coordinates to integers for indexing
+            u = int(u)
+            v = int(v)
+            Idx = u + depth_msg.width * v
+            depth = depths[Idx]
+            # Push the depth into the min-heap
+            heapq.heappush(depth_heap, depth)
+    
+    # Extract the smallest depth from the min-heap if it's not empty
+    if depth_heap:
+        smallest_depth = heapq.heappop(depth_heap)
+        return smallest_depth
+
+    return None
 
 def depthCallback(depth_msg):
     global depths, smallest_depth, fodder_bunk_ratio, combined_fodder_mask, combined_bunk_mask
@@ -272,11 +316,21 @@ def depthCallback(depth_msg):
     # Extract the smallest depth from the min-heap if it's not empty
     if depth_heap:
         smallest_depth = heapq.heappop(depth_heap)
-        rospy.loginfo(f"The Clostest depth of the cow: {smallest_depth/1000} m")
+        # Ensure smallest_depth is finite before publishing
+        if np.isfinite(smallest_depth):
+            clostest_depth_cow_pub.publish(smallest_depth)
+            rospy.loginfo(f"The Closest depth of the cow: {smallest_depth / 1000} m")
+            logger.info(f"The Closest depth of the cow: {smallest_depth / 1000} m")
+        else:
+            rospy.logwarn("Encountered non-finite closest depth value.")
+            logger.warning("Encountered non-finite closest depth value.")
 
     if combined_fodder_mask is not None and combined_bunk_mask is not None:
         fodder_bunk_ratio = calculate_fodder_bunk_ratio(combined_fodder_mask, combined_bunk_mask, depth_image)
         rospy.loginfo(f"Fodder to Bunk Ratio {fodder_bunk_ratio}")
+        logger.info(f"Fodder to Bunk Ratio {fodder_bunk_ratio}")
+
+    rospy.loginfo('-'*40)
 
 # Callback function to process each received image
 def image_callback(ros_image):
@@ -288,8 +342,9 @@ def image_callback(ros_image):
     result = inference_image(image_np)
     process_time = time.time() - start_time
     rospy.loginfo(f"Inference time: {process_time:.4f}s")
+    logger.info(f"Inference time: {process_time:.4f}s")
 
-    # Calculate Cow
+    # Extract Mask
     fodder_mask, bunk_mask = extract_fodder_bunk_mask(image_np, result)
     calculate_cow_centroids(image_np, result)
 
@@ -300,6 +355,7 @@ def main():
     # Load the TensorRT model
     init_model()
 
+    rospy.loginfo('-'*40)
     # Subscribe to the ZED camera image and depth topic
     rospy.Subscriber("/zed2i/zed_node/rgb_raw/image_raw_color", Image, image_callback)
     rospy.Subscriber("/zed2i/zed_node/depth/depth_registered", Image, depthCallback)
