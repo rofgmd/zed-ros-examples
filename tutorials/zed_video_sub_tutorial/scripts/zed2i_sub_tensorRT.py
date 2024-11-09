@@ -9,7 +9,7 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray, Int32MultiArray, Float32
+from std_msgs.msg import Float32MultiArray, Int32MultiArray, Float32, Int8
 from cv_bridge import CvBridge
 import time
 from mmdeploy.apis.utils import build_task_processor
@@ -46,6 +46,7 @@ output_scores_pub = rospy.Publisher('/segmentation_result/scores', Float32MultiA
 output_masks_pub = rospy.Publisher('/segmentation_result/masks', Image, queue_size=60)  # Publish masks as images
 fodder_bunk_ratio_pub = rospy.Publisher('fodder_bunk_ratio', Float32, queue_size=10)
 clostest_depth_cow_pub = rospy.Publisher('clostest_depth_cow', Float32, queue_size=10)
+panel_angle_pub = rospy.Publisher('panel_angle', Int8, queue_size=3)
 
 # Store centroids and depth image globally for use across callbacks
 centroids = []
@@ -292,6 +293,14 @@ def calculate_clostest_depth_cow(depths, depth_msg):
 
     return None
 
+def judge_panel_angle(fodder_bunk_ratio, smallest_depth):
+    if smallest_depth > 3800 and fodder_bunk_ratio < 1:
+        panel_angle_pub.publish(90)
+        return 90
+    else:
+        panel_angle_pub.publish(30)
+        return 30
+
 def depthCallback(depth_msg):
     global depths, smallest_depth, fodder_bunk_ratio, combined_fodder_mask, combined_bunk_mask
     # Convert the raw data to a NumPy array of floats
@@ -330,7 +339,11 @@ def depthCallback(depth_msg):
         rospy.loginfo(f"Fodder to Bunk Ratio {fodder_bunk_ratio}")
         logger.info(f"Fodder to Bunk Ratio {fodder_bunk_ratio}")
 
-    rospy.loginfo('-'*40)
+    if smallest_depth is not None and fodder_bunk_ratio is not None:
+        panel_angle = judge_panel_angle(fodder_bunk_ratio, smallest_depth)
+        rospy.loginfo(f"Panel Angle should be {panel_angle}")
+        logger.info(f"Panel Angle should be {panel_angle}")
+    rospy.loginfo('-'*60)
 
 # Callback function to process each received image
 def image_callback(ros_image):
@@ -355,7 +368,7 @@ def main():
     # Load the TensorRT model
     init_model()
 
-    rospy.loginfo('-'*40)
+    rospy.loginfo('-'*60)
     # Subscribe to the ZED camera image and depth topic
     rospy.Subscriber("/zed2i/zed_node/rgb_raw/image_raw_color", Image, image_callback)
     rospy.Subscriber("/zed2i/zed_node/depth/depth_registered", Image, depthCallback)

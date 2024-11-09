@@ -33,6 +33,7 @@ install(PROGRAMS
   scripts/zed2i_sub.py
   scripts/zed2i_sub_tensorRT.py
   scripts/publish_svo.py
+  scripts/control_car.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
