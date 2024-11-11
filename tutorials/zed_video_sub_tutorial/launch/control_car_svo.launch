@@ -1,0 +1,13 @@
+<launch>
+    <!-- Launch Instance Segment Node -->
+    <node pkg="zed_video_sub_tutorial" type="zed2i_sub_tensorRT.py" name="zed_tensorRT_segmenter" output="screen">
+    </node>
+
+    <!-- Launch Car Control Node -->
+    <node pkg="zed_video_sub_tutorial" type="control_car.py" name="control_car" output="screen" required="true">
+    </node>
+
+    <!-- Launch Svo Publish Node -->
+    <node pkg="zed_video_sub_tutorial" type="publish_svo.py" name="svo_rgbd_publisher" output="screen" required="true">
+    </node>    
+</launch>

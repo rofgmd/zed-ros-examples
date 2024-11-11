@@ -37,6 +37,10 @@ install(PROGRAMS
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
+install(DIRECTORY launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+)
+
 ## Build 
 add_executable(zed_video_sub src/zed_video_sub_tutorial.cpp)
 add_executable(zed2i_video_sub src/zed2i_video_sub_tutorial.cpp)
