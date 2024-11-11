@@ -18,6 +18,11 @@ catkin_package()
 
 include_directories(include ${catkin_INCLUDE_DIRS})
 
+install(PROGRAMS
+    scripts/zed_tracking_sub
+    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
 ## Build 
 add_executable(zed_tracking_sub src/zed_tracking_sub_tutorial.cpp)
 target_link_libraries(zed_tracking_sub ${catkin_LIBRARIES})
