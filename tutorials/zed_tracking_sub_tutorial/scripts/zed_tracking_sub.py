@@ -26,6 +26,22 @@ def odom_callback(msg):
     rospy.loginfo("Received odom in '%s' frame : X: %.2f Y: %.2f Z: %.2f - R: %.2f P: %.2f Y: %.2f",
                   msg.header.frame_id, tx, ty, tz, roll * RAD2DEG, pitch * RAD2DEG, yaw * RAD2DEG)
 
+def odom_yaw_callback(msg):
+    # Camera position in map frame
+    tx = msg.pose.pose.position.x # x -> red axis
+    ty = msg.pose.pose.position.y # y -> green axis
+    tz = msg.pose.pose.position.z # z -> blue axis
+
+    # Orientation quaternion
+    q = msg.pose.pose.orientation
+    quaternion = (q.x, q.y, q.z, q.w)
+
+    # 3x3 Rotation matrix from quaternion
+    euler = tf.transformations.euler_from_quaternion(quaternion)
+    roll, pitch, yaw = euler
+
+    rospy.loginfo("Current Yaw: %f", yaw)
+
 def pose_callback(msg):
     # Camera position in map frame
     tx = msg.pose.position.x
@@ -49,7 +65,7 @@ def main():
     rospy.init_node('zed_tracking_subscriber')
 
     # Create subscribers
-    rospy.Subscriber("/zed2i/zed_node/odom", Odometry, odom_callback)
+    rospy.Subscriber("/zed2i/zed_node/odom", Odometry, odom_yaw_callback)
     # rospy.Subscriber("/zed2i/zed_node/pose", PoseStamped, pose_callback)
 
     # Spin to keep the script running

@@ -16,6 +16,8 @@ find_package(catkin REQUIRED COMPONENTS
     rospy
     std_msgs
     sensor_msgs
+    geometry_msgs
+    nav_msgs
     cv_bridge  # Required for converting ROS images to OpenCV
 )
 
@@ -34,6 +36,7 @@ install(PROGRAMS
   scripts/zed2i_sub_tensorRT.py
   scripts/publish_svo.py
   scripts/control_car.py
+  scripts/go_line.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
