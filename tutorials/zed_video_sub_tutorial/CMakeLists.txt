@@ -37,6 +37,7 @@ install(PROGRAMS
   scripts/publish_svo.py
   scripts/control_car.py
   scripts/go_line.py
+  scripts/clean_command.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
