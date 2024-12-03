@@ -35,9 +35,15 @@ logger.addHandler(handler)
 
 # Load your model and configuration once
 deploy_cfg = '/home/kevin/mmdeploy/configs/mmdet/instance-seg/instance-seg_rtmdet-ins_tensorrt_static-640x640.py'
-model_cfg = '/home/kevin/mmdetection/configs/cow/rtmdet-ins_tiny_1xb4-500e_cow_update_20241017.py'
 device = 'cuda'
-backend_model = ['/home/kevin/mmdeploy/mmdeploy_models/cow/rtmdet-ins_tiny/end2end.engine']
+
+# model update at 20241017
+# model_cfg = '/home/kevin/mmdetection/configs/cow/rtmdet-ins_tiny_1xb4-500e_cow_update_20241017.py'
+# backend_model = ['/home/kevin/mmdeploy/mmdeploy_models/cow/rtmdet-ins_tiny/end2end.engine']
+
+# model update at 20241202
+model_cfg = '/home/kevin/mmdetection/configs/cow/rtmdet-ins_tiny_1xb4-500e_cow_update_20241202.py'
+backend_model = ['/home/kevin/mmdeploy/mmdeploy_models/cow/rtmdet-ins_tiny_1203/end2end.engine']
 
 output_image_pub = rospy.Publisher('/segmentation_result/image', Image, queue_size=60)
 output_bboxes_pub = rospy.Publisher('/segmentation_result/bboxes', Float32MultiArray, queue_size=60)
@@ -218,20 +224,30 @@ def calculate_cow_centroids(image_np, result, is_visualize = False):
 
 def extract_fodder_bunk_mask(image_np, result):
     global combined_fodder_mask, combined_bunk_mask
+    
+    # Extract masks
     bunk_mask, _, _, = extract_special_mask(image_np, result, False, 1, 0.5)
     fodder_mask, _, _ = extract_special_mask(image_np, result, False, 3, 0.3)
 
-    fodder_mask = fodder_mask.cpu().numpy()
-    bunk_mask = bunk_mask.cpu().numpy()
+    # Convert to NumPy arrays
+    fodder_mask = fodder_mask.cpu().numpy() if fodder_mask is not None else None
+    bunk_mask = bunk_mask.cpu().numpy() if bunk_mask is not None else None
 
-    combined_fodder_mask = np.zeros_like(fodder_mask[0], dtype=np.uint8)
-    combined_bunk_mask = np.zeros_like(bunk_mask[0], dtype=np.uint8)
+    # Handle fodder mask
+    if fodder_mask is not None and fodder_mask.size > 0:
+        combined_fodder_mask = np.zeros_like(fodder_mask[0], dtype=np.uint8)
+        for mask in fodder_mask:
+            combined_fodder_mask = np.logical_or(combined_fodder_mask, mask).astype(np.uint8)
+    else:
+        combined_fodder_mask = None
 
-    for mask in fodder_mask:
-        combined_fodder_mask = np.logical_or(combined_fodder_mask, mask).astype(np.uint8)
-
-    for mask in bunk_mask:
-        combined_bunk_mask = np.logical_or(combined_bunk_mask, mask).astype(np.uint8)
+    # Handle bunk mask
+    if bunk_mask is not None and bunk_mask.size > 0:
+        combined_bunk_mask = np.zeros_like(bunk_mask[0], dtype=np.uint8)
+        for mask in bunk_mask:
+            combined_bunk_mask = np.logical_or(combined_bunk_mask, mask).astype(np.uint8)
+    else:
+        combined_bunk_mask = None
 
     return combined_fodder_mask, combined_bunk_mask
 

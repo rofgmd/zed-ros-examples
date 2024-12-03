@@ -13,9 +13,9 @@ from nav_msgs.msg import Odometry
 panel_angel_prev = 0
 panel_angle = 90
 # Car speed 
-speed = 100
-left_speed = 100
-right_speed = 100
+speed = 0
+left_speed = 0
+right_speed = 0
 # --------------------------------
 
 # PID Parameters
@@ -71,19 +71,16 @@ def main():
     rospy.Subscriber('panel_angle', Int8, control_angle_panel_callback)
     # Define a rate to control how often the loop runs
 
-    rate = rospy.Rate(120)  # 120 Hz
+    # rate = rospy.Rate(120)  # 120 Hz
 
     while not rospy.is_shutdown():
         # Send the current panel angle to the car's control system
-        rospy.loginfo(f"panel_angle is {panel_angle}")
-        # if(panel_angle == 90 and panel_angel_prev == 30):
-        #     time.sleep(0.01)
-        # send_command(panel_angle, left_speed, right_speed, speed)
-        send_command(0, left_speed, right_speed, speed)
+        rospy.loginfo(f"current panel is {panel_angle}")
+        send_command(panel_angle, left_speed, right_speed, speed)
         time.sleep(0.01)
 
         # Sleep to maintain the loop rate
-        rate.sleep()
+        # rate.sleep()
 
     send_command(0, 0, 0, 0)
     time.sleep(0.5) 
