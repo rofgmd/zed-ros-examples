@@ -52,7 +52,7 @@ output_scores_pub = rospy.Publisher('/segmentation_result/scores', Float32MultiA
 output_masks_pub = rospy.Publisher('/segmentation_result/masks', Image, queue_size=60)  # Publish masks as images
 fodder_bunk_ratio_pub = rospy.Publisher('fodder_bunk_ratio', Float32, queue_size=10)
 clostest_depth_cow_pub = rospy.Publisher('clostest_depth_cow', Float32, queue_size=10)
-panel_angle_pub = rospy.Publisher('panel_angle', Int8, queue_size=3)
+panel_angle_pub = rospy.Publisher('panel_angle', Int8, queue_size=10)
 
 # Store centroids and depth image globally for use across callbacks
 centroids = []

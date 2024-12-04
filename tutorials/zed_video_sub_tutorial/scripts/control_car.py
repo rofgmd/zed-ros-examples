@@ -35,13 +35,15 @@ def main():
     rate = rospy.Rate(120)  # 120 Hz
 
     while not rospy.is_shutdown():
+        maintain_time = 2
         # Send the current panel angle to the car's control system
-        # Keep panel angel == 30 at least 1s
-        if panel_angel_prev == 30 and panel_angle == 90:
-            time.sleep(1)
-
-        rospy.loginfo(f"current panel is {panel_angle}")
-        send_command(panel_angle, left_speed, right_speed, speed)
+        if panel_angle == 30:
+            rospy.loginfo(f"Panel angle is 30, maintaining for {maintain_time} second...")
+            send_command(30, left_speed, right_speed, speed)
+            time.sleep(maintain_time)
+        else: 
+            rospy.loginfo(f"Sending panel angle: {panel_angle}")
+            send_command(panel_angle, left_speed, right_speed, speed)
 
         # Sleep to maintain the loop rate
         rate.sleep()

@@ -26,25 +26,24 @@ speed = 100
 left_speed = 100
 right_speed = 100
 # --------------------------------
-yaw_info = 0
 ty_info = 0
 # PID Parameters
 # --------------------------------
 # PID参数
-Kp = 125.0  # 比例增益
-Ki = 0.045  # 积分增益
-Kd = 0.7  # 微分增益
+# Kp = 125.0  # 比例增益
+# Ki = 0.045  # 积分增益
+# Kd = 0.7  # 微分增益
 # --------------------------------
-Kp_ty = 1000
-Ki_ty = 0.0
-Kd_ty = 0.0
+Kp_ty = 125
+Ki_ty = 0.045
+Kd_ty = 0.7
 # 设定目标转向角（例如0度代表沿y轴正方向）
-target_angle = 0.0  # 目标角度
+# target_angle = 0.0  # 目标角度
 target_ty = 0.0
 # PID误差积累
-integral = 0.0
+# integral = 0.0
 integral_ty = 0.0
-previous_error = 0.0
+# previous_error = 0.0
 previous_error_ty = 0.0
 # 用于记录误差和时间
 error_list = []
@@ -57,55 +56,12 @@ def smooth_data(data, buffer):
     buffer.append(data)
     return sum(buffer) / len(buffer)
 
-def odom_yaw_callback(msg):
-    # Camera position in map frame
-    tx = msg.pose.pose.position.x # x -> red axis
-    ty = msg.pose.pose.position.y # y -> green axis
-    tz = msg.pose.pose.position.z # z -> blue axis
-
-    # Orientation quaternion
-    q = msg.pose.pose.orientation
-    quaternion = (q.x, q.y, q.z, q.w)
-
-    # 3x3 Rotation matrix from quaternion
-    euler = tf.transformations.euler_from_quaternion(quaternion)
-    roll, pitch, yaw = euler
-    yaw_info = yaw
-
-    # rospy.loginfo("Current Yaw: %f", yaw)
-    adjust_left_right_speed_angle(yaw)
-
 def odom_y_callback(msg):
+    global ty_info,ty_buffer
     ty = msg.pose.pose.position.y # y -> green axis
     # 平滑位置数据
     ty_info = smooth_data(ty, ty_buffer)
     adjust_left_right_speed(ty_info)   
-
-def pid_control_angle(current_angle):
-    # 计算当前时间
-    current_time = rospy.Time.now().to_sec()
-    # 计算角度误差
-    error = target_angle - current_angle
-    # 将角度差限制在[-180, 180]之间
-    if error > 180:
-        error -= 360
-    elif error < -180:
-        error += 360
-    # 积分项
-    integral += error
-    
-    # 微分项
-    derivative = error - previous_error
-    previous_error = error
-    
-    # 计算调整值
-    correction = Kp * error + Ki * integral + Kd * derivative
-    # Debug logs
-    # rospy.loginfo(f"Error: {error}, Integral: {integral}, Derivative: {derivative}, Correction: {correction}")    
-    # 记录误差和时间
-    error_list.append(error)
-    time_list.append(current_time)
-    return correction
 
 def pid_control_ty(current_ty):
     global previous_error_ty
@@ -123,26 +79,19 @@ def pid_control_ty(current_ty):
     previous_error_ty = error
     
     # 计算调整值
-    correction = Kd_ty * error + Ki_ty * integral_ty + Kd_ty * derivative
-    # Debug logs
-    # rospy.loginfo(f"Error: {error}, Integral: {integral_tx}, Derivative: {derivative}, Correction: {correction}")    
+    correction = Kp_ty * error + Ki_ty * integral_ty + Kd_ty * derivative
+   
     # 记录误差和时间
     error_list_ty.append(error)
     time_list_ty.append(current_time)
     return correction
 
-def adjust_left_right_speed_angle(current_angle):
-    # 根据转向角调整左右轮速度
-    correction = pid_control_angle(current_angle)
-    left_speed = speed - correction
-    right_speed = speed + correction
-
 def adjust_left_right_speed(ty):
+    global left_speed, right_speed
     correction = pid_control_ty(ty)
     # 根据误差调整左右轮速度
     left_speed = speed - correction
     right_speed = speed + correction
-    send_command(panel_angle, left_speed, right_speed, speed)
 
 def draw_error_plot():
     # At program exit, plot and save the error curve
@@ -183,40 +132,22 @@ def draw_y_distribution_plot():
         return
     
     plt.figure(figsize=(10, 6))
-    
-    # Scatter plot of x positions over time
-    plt.scatter(time_list_ty, error_list_ty, color='blue', label='x positions', alpha=0.6)
-    plt.plot(time_list_ty, error_list_ty, color='cyan', linestyle='--', alpha=0.5)
-
-    # Labels and title
-    plt.title('Distribution of Y Positions Over Time')
-    plt.xlabel('Time (seconds)')
-    plt.ylabel('Y Position')
-    plt.grid(alpha=0.3)
-    plt.legend()
-
-    # Show plot
-    plt.show()
 
 def main():
     rospy.init_node('control_car', anonymous=True)
 
     serial_init()  # Initialize and open serial port
     time.sleep(1)  # Wait for 1 seconds
-    send_command(0,0,0,0)
-    time.sleep(1)  # Wait for 1 seconds
     rospy.Subscriber("/zed2i/zed_node/odom", Odometry, odom_y_callback)
     # Define a rate to control how often the loop runs
-    rate = rospy.Rate(600)
+    rate = rospy.Rate(60)
 
     while not rospy.is_shutdown():
         # Send the current panel angle to the car's control system
         # rospy.loginfo(f"panel_angle is {panel_angle}")
         rospy.loginfo(f"left_speed is {left_speed}, right_speed is {right_speed}")
         rospy.loginfo(f"ty is {ty_info}")
-        # if(panel_angle == 90 and panel_angel_prev == 30):
-        #     time.sleep(0.1)
-        # send_command(panel_angle, left_speed, right_speed, speed)
+        send_command(panel_angle, left_speed, right_speed, speed)
 
         # Sleep to maintain the loop rate
         rate.sleep()

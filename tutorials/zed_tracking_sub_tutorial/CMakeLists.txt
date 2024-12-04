@@ -21,6 +21,7 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 install(PROGRAMS
     scripts/zed_tracking_sub.py
     scripts/zed_tracking_speed.py
+    scripts/record_y.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
