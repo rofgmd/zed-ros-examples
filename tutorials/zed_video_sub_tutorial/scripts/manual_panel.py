@@ -3,7 +3,7 @@ import time
 from mmdet.serial_util.SerialCommunicate import serial_init
 from mmdet.serial_util.control_car import send_command
 
-panel_angle = 0
+panel_angle = 30
 
 def main():
     serial_init()

@@ -51,7 +51,7 @@ output_labels_pub = rospy.Publisher('/segmentation_result/labels', Int32MultiArr
 output_scores_pub = rospy.Publisher('/segmentation_result/scores', Float32MultiArray, queue_size=60)
 output_masks_pub = rospy.Publisher('/segmentation_result/masks', Image, queue_size=60)  # Publish masks as images
 fodder_bunk_ratio_pub = rospy.Publisher('fodder_bunk_ratio', Float32, queue_size=10)
-clostest_depth_cow_pub = rospy.Publisher('clostest_depth_cow', Float32, queue_size=10)
+clostest_depth_cow_pub = rospy.Publisher('clostest_depth_cow', Float32, queue_size=3)
 panel_angle_pub = rospy.Publisher('panel_angle', Int8, queue_size=10)
 
 # Store centroids and depth image globally for use across callbacks
@@ -259,11 +259,11 @@ def extract_fodder_bunk_mask(image_np, result):
 
 def get_depth_weight_tensor(depth_value):
     # 根据深度值的范围，设置权重
-    return torch.where(depth_value < 4000, torch.tensor(1.0), torch.where(depth_value < 6000, torch.tensor(0.8), torch.tensor(0.0)))
+    return torch.where(depth_value < 4, torch.tensor(1.0), torch.where(depth_value < 6, torch.tensor(0.8), torch.tensor(0.0)))
 
 def get_depth_weight(depth_value):
     # 根据深度值的范围，设置权重
-    return np.where(depth_value < 4000, 1.0, np.where(depth_value < 6000, 0.8, 0))
+    return np.where(depth_value < 4, 1.0, np.where(depth_value < 6, 0.8, 0))
 
 def calculate_fodder_bunk_ratio(fodder_mask, bunk_mask, depth_image):
     # ensure bool
@@ -310,7 +310,7 @@ def calculate_clostest_depth_cow(depths, depth_msg):
     return None
 
 def judge_panel_angle(fodder_bunk_ratio, smallest_depth):
-    if smallest_depth > 3800 and fodder_bunk_ratio < 1:
+    if smallest_depth > 3.8 and fodder_bunk_ratio < 1:
         panel_angle_pub.publish(90)
         return 90
     else:
@@ -344,8 +344,8 @@ def depthCallback(depth_msg):
         # Ensure smallest_depth is finite before publishing
         if np.isfinite(smallest_depth):
             clostest_depth_cow_pub.publish(smallest_depth)
-            rospy.loginfo(f"The Closest depth of the cow: {smallest_depth / 1000} m")
-            logger.info(f"The Closest depth of the cow: {smallest_depth / 1000} m")
+            rospy.loginfo(f"The Closest depth of the cow: {smallest_depth} m")
+            logger.info(f"The Closest depth of the cow: {smallest_depth} m")
         else:
             rospy.logwarn("Encountered non-finite closest depth value.")
             logger.warning("Encountered non-finite closest depth value.")
